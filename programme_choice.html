@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Pilihan Program</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1, h2, h3 { text-align: center; }
+        
+        /* Table Styling */
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #3498db; color: white; }
+        input[type=number] { width: 50px; text-align: center; padding: 5px; border: 1px solid #ccc; border-radius: 4px;}
+        
+        /* Sliders Styling */
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; background: #f9f9f9; padding: 20px; border-radius: 8px; }
+        .control-group { display: flex; flex-direction: column; }
+        label { font-weight: bold; margin-bottom: 5px; font-size: 0.9em;}
+        input[type=range] { width: 100%; }
+        
+        .result-box { text-align: center; font-size: 1.2em; font-weight: bold; color: #2c3e50; margin: 20px 0; padding: 15px; background: #e8f4f8; border-radius: 8px; }
+        canvas { max-height: 400px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎓 Sistem Pilihan Program (Multinomial Logit)</h1>
+    
+    <h3>Langkah 1: Masukkan Skor Faktor (1 - 5)</h3>
+    <table id="inputTable">
+        <thead>
+            <tr>
+                <th>Programme</th>
+                <th>Interest</th>
+                <th>Exam Results</th>
+                <th>Career</th>
+                <th>Location</th>
+                <th>Fees</th>
+                <th>Explore</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            </tbody>
+    </table>
+
+    <h3>Langkah 2: Tetapkan Pemberat (0.0 - 1.0)</h3>
+    <div class="controls">
+        <div class="control-group">
+            <label>Interest: <span id="val_interest">0.30</span></label>
+            <input type="range" id="w_interest" min="0" max="1" step="0.05" value="0.30" oninput="updateModel()">
+        </div>
+        <div class="control-group">
+            <label>Exam Results: <span id="val_exam">0.20</span></label>
+            <input type="range" id="w_exam" min="0" max="1" step="0.05" value="0.20" oninput="updateModel()">
+        </div>
+        <div class="control-group">
+            <label>Career Prospects: <span id="val_career">0.25</span></label>
+            <input type="range" id="w_career" min="0" max="1" step="0.05" value="0.25" oninput="updateModel()">
+        </div>
+        <div class="control-group">
+            <label>Location: <span id="val_location">0.10</span></label>
+            <input type="range" id="w_location" min="0" max="1" step="0.05" value="0.10" oninput="updateModel()">
+        </div>
+        <div class="control-group">
+            <label>Fees: <span id="val_fees">0.10</span></label>
+            <input type="range" id="w_fees" min="0" max="1" step="0.05" value="0.10" oninput="updateModel()">
+        </div>
+        <div class="control-group">
+            <label>Explore: <span id="val_explore">0.05</span></label>
+            <input type="range" id="w_explore" min="0" max="1" step="0.05" value="0.05" oninput="updateModel()">
+        </div>
+    </div>
+
+    <div class="result-box" id="top_choice">
+        Keputusan Sedang Dikira...
+    </div>
+
+    <h3>Kebarangkalian Pilihan (%)</h3>
+    <canvas id="myChart"></canvas>
+</div>
+
+<script>
+    const programmes = ["Pure Sciences", "Applied Sciences", "Engineering", "Accounting", "Management", "Arts"];
+    const initialScores = [
+        [5, 5, 3, 3, 4, 2],
+        [4, 5, 4, 3, 3, 3],
+        [4, 5, 5, 2, 5, 2],
+        [3, 4, 4, 4, 4, 2],
+        [3, 3, 3, 5, 3, 3],
+        [2, 3, 2, 4, 2, 4]
+    ];
+
+    let chartInstance = null;
+
+    function generateTable() {
+        const tbody = document.getElementById('tableBody');
+        for (let i = 0; i < programmes.length; i++) {
+            let tr = document.createElement('tr');
+
+            let tdName = document.createElement('td');
+            tdName.innerText = programmes[i];
+            tdName.style.fontWeight = "bold";
+            tr.appendChild(tdName);
+
+            for (let j = 0; j < 6; j++) {
+                let td = document.createElement('td');
+                td.innerHTML = `<input type="number" id="cell_${i}_${j}" min="1" max="5" value="${initialScores[i][j]}" oninput="updateModel()">`;
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+    }
+
+    function updateModel() {
+        let currentData = [];
+        for (let i = 0; i < programmes.length; i++) {
+            currentData.push({
+                name: programmes[i],
+                interest: parseFloat(document.getElementById(`cell_${i}_0`).value) || 0,
+                exam: parseFloat(document.getElementById(`cell_${i}_1`).value) || 0,
+                career: parseFloat(document.getElementById(`cell_${i}_2`).value) || 0,
+                location: parseFloat(document.getElementById(`cell_${i}_3`).value) || 0,
+                fees: parseFloat(document.getElementById(`cell_${i}_4`).value) || 0,
+                explore: parseFloat(document.getElementById(`cell_${i}_5`).value) || 0
+            });
+        }
+
+        const w = {
+            interest: parseFloat(document.getElementById('w_interest').value),
+            exam: parseFloat(document.getElementById('w_exam').value),
+            career: parseFloat(document.getElementById('w_career').value),
+            location: parseFloat(document.getElementById('w_location').value),
+            fees: parseFloat(document.getElementById('w_fees').value),
+            explore: parseFloat(document.getElementById('w_explore').value),
+        };
+
+        document.getElementById('val_interest').innerText = w.interest.toFixed(2);
+        document.getElementById('val_exam').innerText = w.exam.toFixed(2);
+        document.getElementById('val_career').innerText = w.career.toFixed(2);
+        document.getElementById('val_location').innerText = w.location.toFixed(2);
+        document.getElementById('val_fees').innerText = w.fees.toFixed(2);
+        document.getElementById('val_explore').innerText = w.explore.toFixed(2);
+
+        let sumExpV = 0;
+        
+        currentData.forEach(item => {
+            item.utility = (item.interest * w.interest) + (item.exam * w.exam) + (item.career * w.career) + 
+                           (item.location * w.location) + (item.fees * w.fees) + (item.explore * w.explore);
+            item.expV = Math.exp(item.utility);
+            sumExpV += item.expV;
+        });
+
+        let highestProb = 0;
+        let topProgramme = "";
+
+        currentData.forEach(item => {
+            item.probability = (item.expV / sumExpV) * 100;
+            if(item.probability > highestProb) {
+                highestProb = item.probability;
+                topProgramme = item.name;
+            }
+        });
+
+        document.getElementById('top_choice').innerHTML = `🏆 Pilihan Paling Tinggi: <strong>${topProgramme}</strong> (${highestProb.toFixed(2)}%)`;
+
+        const labels = currentData.map(item => item.name);
+        const probabilities = currentData.map(item => item.probability.toFixed(2));
+
+        const ctx = document.getElementById('myChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Probability (%)',
+                    data: probabilities,
+                    backgroundColor: '#e74c3c',
+                    borderRadius: 5
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true, max: 100 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+    window.onload = () => {
+        generateTable();
+        updateModel();
+    };
+</script>
+
+</body>
+</html>
